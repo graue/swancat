@@ -214,12 +214,8 @@ static FILE *generate_pipe_source(int *pmaxsamps, int *preplacesamps)
 	subdiv = (int)pow(2, subdepth); // 1, 2, 4, 8, 16, or 32
 	subbeats = rnd((maxbeats*subdiv) + 1 - (minbeats*subdiv))
 		+ (minbeats*subdiv);
-	fprintf(stderr, "maxbeats %d minbeats %d\n",maxbeats,minbeats);//Tgk
-	fprintf(stderr, "subdepth %d subdiv %d subbeats %d\n",
-		subdepth,subdiv,subbeats);//Tgk
 	subbeats *= SUBDIV/subdiv;
 	secs = beatlength/SUBDIV * subbeats;
-	fprintf(stderr, "final-subbeats %d secs %f\n",subbeats,secs);//Tgk
 
 	*pmaxsamps = (int)(RATE*secs + 0.99);
 
@@ -231,7 +227,6 @@ static FILE *generate_pipe_source(int *pmaxsamps, int *preplacesamps)
 		interval = rnd(2+interval);
 
 	// go up or down this many steps
-	fprintf(stderr, "last note: %d, interval: %d\n", lastnote, interval);//Tgk
 	note = stepsfrom(lastnote, interval*(rnd(2) ? -1 : 1));
 
 	if (note < 0)
@@ -267,7 +262,7 @@ static FILE *generate_pipe_source(int *pmaxsamps, int *preplacesamps)
 	install_gen(cmdstring, sizeof cmdstring, sinefreq, (secs+0.2)*1000,
 		amp);
 
-	numfx = rnd(3)+1;
+	numfx = rnd(4)+2;
 	for (ix = 0; ix < numfx; ix++)
 		add_effect(cmdstring, sizeof cmdstring, subdiv);
 
