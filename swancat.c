@@ -50,7 +50,10 @@ static const char *fadetypes[] = {"lin", "log", "cos", "logcos"};
 //was                      A   B C   D   E F   G     = A minor / C major?
 // static int scale[12] = {1,0,1,1,0,1,0,1,1,0,1,0};
 
-static int scale[12] = {1,0,1,1,0,0,0,1,1,0,0,0}; // B iwato (BCEFAB)
+// static int scale[12] = {1,0,1,1,0,0,0,1,1,0,0,0}; // B iwato (BCEFAB)
+
+//                      A   B C   D   E F   G
+static int scale[12] = {0,1,0,1,0,0,1,0,1,0,1,0}; // C minor pentatonic
 
 // starting with a note value, increment or descend by this many steps
 // using only notes in the scale
@@ -164,11 +167,11 @@ static void add_effect(char *cmd, const size_t buflen, int subdiv)
 		float threshdB, ratio, attack, release;
 		int rms = rnd(2);
 		threshdB = (rms ? -12 : -6) - 30*frnd();
-		// note: comp program is backwards as of this writing
-		// and >1 = expander <1 = compressor
-		// though it should probably be the reverse.
+		// note: comp program used to be backwards
+		// but now <1 = expander >1 = compressor
+		// as it should be.
 		ratio = 1.0 + frnd()*12.0;
-		if (rnd(8)) // far more likely to compress than expand
+		if (!rnd(8)) // far more likely to compress than expand
 			ratio = 1.0/ratio;
 		attack = frnd()*100.0+10.0;
 		release = frnd()*1000.0+100.0;
@@ -398,7 +401,8 @@ int main(void)
 	// XXX hardcoded random bounds
 	make_sound(
 		frnd()*110.0+70.0, // 70 to 180 bpm
-		rnd(RATE*421) + RATE*120, // 2 to 9 minutes
+//		rnd(RATE*421) + RATE*120, // 2 to 9 minutes
+		RATE*60*74, // 1 hour 14 minutes
 		rnd(5)+4, // 4 to 8 initial sndsrcs
 		rnd(RATE*27) + RATE*4, // minimum length 4-30 sec
 		rnd(RATE*56) + RATE*35 // max length 35-90 sec
