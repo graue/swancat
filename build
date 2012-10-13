@@ -1,0 +1,2 @@
+#!/bin/sh
+gcc -W -Wall -O2 -o swancat *.c -lm
