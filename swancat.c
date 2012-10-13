@@ -35,9 +35,13 @@ static int ssndsrcs = 0, nsndsrcs = 0;
 #define SEMIRANGE (OCTAVES*12) // span this many semitones
 #define CENTERNOTE 440.0 // A-4 freq
 
+#define SUBDIV 32 // subbeat = 1/32nd or 2^-5 of a beat
+#define SUBPOT 5 // subdiv power of two
+
 static int lastnote = SEMIRANGE/2+3; // 3 above A-4 (440 Hz) = C-5, I guess
 
-static float beatlength; // in ms
+static float beatlength; // in secs
+static int minbeats, maxbeats;
 
 static const char *fadetypes[] = {"lin", "log", "cos", "logcos"};
 
@@ -121,7 +125,11 @@ static void install_gen(char *cmd, const size_t buflen,
 	else errx(1, "oops, not enough generators");
 }
 
-static void add_effect(char *cmd, const size_t buflen)
+// subdiv is included here so that beat-oriented effects
+// can use the subdivision size as the smallest length of time
+// to work with
+
+static void add_effect(char *cmd, const size_t buflen, int subdiv)
 {
 	size_t len;
 	size_t spaceleft;
@@ -132,7 +140,7 @@ static void add_effect(char *cmd, const size_t buflen)
 	spaceleft = buflen - len;
 	p = cmd + len;
 
-	which = rnd(3);
+	which = rnd(4);
 	if (which == 0) // delay
 	{
 		float delaylen, feedback, wetout;
@@ -168,17 +176,31 @@ static void add_effect(char *cmd, const size_t buflen)
 			exponent = 1.0 / exponent;
 		snprintf(p, spaceleft, "|power -exp %f", exponent);
 	}
+	else if (which == 3) // beat-creating delay
+	{
+		float hitlen, decaylen, repeatlen, feedback;
+		hitlen = frnd()*0.5 + 0.05;
+		decaylen = frnd()*0.15 + 0.01;
+		repeatlen = beatlength/subdiv * (rnd(4*subdiv)+1);
+		feedback = frnd()*99.9;
+		snprintf(p, spaceleft,
+			"|envelope 1 %f 1 %f 0"
+			"|delay -len %f -feedback %f -wetout 100",
+			hitlen*1000, decaylen*1000,
+			repeatlen, feedback);
+	}
 	else errx(1, "oops, not enough effects");
 }
 
-static FILE *generate_pipe_source(int maxsamps, int *preplacesamps)
+static FILE *generate_pipe_source(int *pmaxsamps, int *preplacesamps)
 {
 	char cmdstring[10240];
 	float sinefreq;
-	float secs; // sine length in seconds
+	float secs; // sound length in seconds
 	float panangle;
 	float infadetime, outfadetime;
 	float amp;
+	int subdiv, subdepth, subbeats; /* see SUBDIV above */
 	int note;
 	int interval;
 	int harmonic;
@@ -187,6 +209,21 @@ static FILE *generate_pipe_source(int maxsamps, int *preplacesamps)
 	const char *infadetype, *outfadetype;
 	FILE *fp;
 
+	// decide on a length for the sound
+	subdepth = rnd(SUBPOT+1); // given SUBPOT=5, this is 0 to 5
+	subdiv = (int)pow(2, subdepth); // 1, 2, 4, 8, 16, or 32
+	subbeats = rnd((maxbeats*subdiv) + 1 - (minbeats*subdiv))
+		+ (minbeats*subdiv);
+	fprintf(stderr, "maxbeats %d minbeats %d\n",maxbeats,minbeats);//Tgk
+	fprintf(stderr, "subdepth %d subdiv %d subbeats %d\n",
+		subdepth,subdiv,subbeats);//Tgk
+	subbeats *= SUBDIV/subdiv;
+	secs = beatlength/SUBDIV * subbeats;
+	fprintf(stderr, "final-subbeats %d secs %f\n",subbeats,secs);//Tgk
+
+	*pmaxsamps = (int)(RATE*secs + 0.99);
+
+	// melody/harmony/note value:
 	// decide how many steps to go, preferring smaller steps
 	// (or no change at all)
 	interval = rnd(2);
@@ -205,7 +242,6 @@ static FILE *generate_pipe_source(int maxsamps, int *preplacesamps)
 	lastnote = note;
 
 	sinefreq = CENTERNOTE * pow(2, (note-SEMIRANGE/2)/12.0);
-	secs = (float)maxsamps / RATE;
 	panangle = rnd(90000) / 1000.0 - 45.0;
 	amp = DBTORAT(-12 - rnd(12));
 
@@ -233,7 +269,7 @@ static FILE *generate_pipe_source(int maxsamps, int *preplacesamps)
 
 	numfx = rnd(3)+1;
 	for (ix = 0; ix < numfx; ix++)
-		add_effect(cmdstring, sizeof cmdstring);
+		add_effect(cmdstring, sizeof cmdstring, subdiv);
 
 	snprintf(cmdstring + strlen(cmdstring),
 		sizeof cmdstring - strlen(cmdstring),
@@ -264,7 +300,7 @@ static void del_sndsrc(int num)
 		(sizeof sndsrcs[0]) * (nsndsrcs - num));
 }
 
-static void add_sndsrc(int minlen, int maxlen)
+static void add_sndsrc(void)
 {
 	sndsrc_t *snd;
 
@@ -272,9 +308,9 @@ static void add_sndsrc(int minlen, int maxlen)
 	snd = xm(sizeof *snd, 1);
 	sndsrcs[nsndsrcs++] = snd;
 
-	snd->maxsamps = rnd(maxlen - minlen + 1) + minlen;
-	snd->fp = generate_pipe_source(snd->maxsamps, &snd->replacesamps);
-	// XXX snd->replacesamps populated in a weird way thru subfunction
+	snd->fp = generate_pipe_source(&snd->maxsamps, &snd->replacesamps);
+	// XXX snd->maxsamps and snd->replacesamps
+	// are populated in a weird way thru subfunction
 	snd->replaced = 0;
 	snd->sampcount = 0;
 }
@@ -298,9 +334,11 @@ static void make_sound(float bpm, int samplen, int initsnds,
 	int sampsout;
 
 	beatlength = 60 / bpm;
+	minbeats = (int)((float)minlen / RATE / beatlength);
+	maxbeats = (int)((float)maxlen / RATE / beatlength);
 
 	for (ix = 0; ix < initsnds; ix++)
-		add_sndsrc(minlen, maxlen);
+		add_sndsrc();
 
 	for (sampsout = 0; sampsout < samplen; sampsout++)
 	{
@@ -316,7 +354,7 @@ static void make_sound(float bpm, int samplen, int initsnds,
 				|| ret == 0 /* EOF */)
 			{
 				if (!sndsrcs[ix]->replaced)
-					add_sndsrc(minlen, maxlen);
+					add_sndsrc();
 				del_sndsrc(ix);
 				ix--;
 			}
@@ -324,7 +362,7 @@ static void make_sound(float bpm, int samplen, int initsnds,
 				>= sndsrcs[ix]->replacesamps
 				&& !sndsrcs[ix]->replaced)
 			{
-				add_sndsrc(minlen, maxlen);
+				add_sndsrc();
 				sndsrcs[ix]->replaced = 1;
 			}
 			sum[0] += f[0];
