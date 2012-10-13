@@ -50,7 +50,7 @@ static const char *fadetypes[] = {"lin", "log", "cos", "logcos"};
 //was                      A   B C   D   E F   G     = A minor / C major?
 // static int scale[12] = {1,0,1,1,0,1,0,1,1,0,1,0};
 
-static int scale[12] = {1,0,1,0,1,0,0,1,0,1,0,0}; // A major pentatonic
+static int scale[12] = {1,0,1,1,0,0,0,1,1,0,0,0}; // B iwato (BCEFAB)
 
 // starting with a note value, increment or descend by this many steps
 // using only notes in the scale
@@ -90,7 +90,7 @@ static void install_gen(char *cmd, const size_t buflen,
 {
 	int which;
 
-	which = rnd(4);
+	which = rnd(6);
 	if (which == 0) // sine or tri
 	{
 		snprintf(cmd, buflen, "%s -freq %f -len %f -amp %f",
@@ -110,7 +110,7 @@ static void install_gen(char *cmd, const size_t buflen,
 			rnd(2) ? "-down" : "",
 			freq, len, amp);
 	}
-	else if (which == 3) // filtered white noise
+	else if (which >= 3 && which <= 5) // filtered white noise
 	{
 		// amplified 30dB because the filtering makes what actually
 		// comes out very quiet. it would probably be difficult to
@@ -122,6 +122,13 @@ static void install_gen(char *cmd, const size_t buflen,
 			"|amp -dB +30",
 			len, amp, freq);
 	}
+/*	else if (which == 6) // rossler
+	{
+		snprintf(cmd, buflen, "rossler -freq %f -len %f -amp %f",
+			freq, len, amp);
+	}
+rossler messes up if freq is above a certain amount, sadly
+*/
 	else errx(1, "oops, not enough generators");
 }
 
@@ -140,13 +147,14 @@ static void add_effect(char *cmd, const size_t buflen, int subdiv)
 	spaceleft = buflen - len;
 	p = cmd + len;
 
-	which = rnd(4);
+	which = rnd(5);
 	if (which == 0) // delay
 	{
 		float delaylen, feedback, wetout;
 		wetout = frnd()*100.0;
-		delaylen = frnd()*4500.0+10.0;
-		feedback = frnd()*99.9;
+		//delaylen = frnd()*4500.0+10.0;
+		delaylen = beatlength/MAX(4,subdiv) * (rnd(4*MAX(4,subdiv))+1);
+		feedback = frnd()*199.8 - 99.9;
 		snprintf(p, spaceleft,
 			"|delay -len %f -feedback %f -wetout %f",
 			delaylen, feedback, wetout);
@@ -179,15 +187,25 @@ static void add_effect(char *cmd, const size_t buflen, int subdiv)
 	else if (which == 3) // beat-creating delay
 	{
 		float hitlen, decaylen, repeatlen, feedback;
-		hitlen = frnd()*0.5 + 0.05;
-		decaylen = frnd()*0.15 + 0.01;
+		hitlen = frnd()*0.08 + 0.002;
+		decaylen = frnd()*0.02 + 0.0005;
 		repeatlen = beatlength/subdiv * (rnd(4*subdiv)+1);
-		feedback = frnd()*99.9;
+		feedback = frnd()*199.8 - 99.9;
 		snprintf(p, spaceleft,
 			"|envelope 1 %f 1 %f 0"
 			"|delay -len %f -feedback %f -wetout 100",
 			hitlen*1000, decaylen*1000,
 			repeatlen, feedback);
+	}
+	else if (which == 4) // sample-and-hold
+	{
+		int bins;
+		float grainlen;
+
+		grainlen = beatlength/subdiv * pow(2, rnd(5));
+		bins = rnd(20)+10;
+		snprintf(p, spaceleft, "|sampbins -numbins %d -grainlen %f",
+			bins, grainlen*1000);
 	}
 	else errx(1, "oops, not enough effects");
 }
@@ -271,7 +289,8 @@ static FILE *generate_pipe_source(int *pmaxsamps, int *preplacesamps)
 		"|pan -angle %f"
 		"|fadef in %s 0 %f | fadef out %s %f %f",
 		panangle,
-		infadetype, infadetime, outfadetype, secs - outfadetime, secs);
+		infadetype, infadetime, outfadetype, secs - outfadetime,
+		secs+0.02 /* extra 0.02s to hopefully avoid clicks */);
 
 //	snprintf(cmdstring, sizeof cmdstring,
 //		"sine -freq %f -len %f -amp %f | pan -angle %f "
@@ -380,9 +399,9 @@ int main(void)
 	make_sound(
 		frnd()*110.0+70.0, // 70 to 180 bpm
 		rnd(RATE*421) + RATE*120, // 2 to 9 minutes
-		rnd(5)+3, // 3 to 7 initial sndsrcs
-		rnd(RATE*17) + RATE*4, // minimum length 4-20 sec
-		rnd(RATE*46) + RATE*45 // max length 45-90 sec
+		rnd(5)+4, // 4 to 8 initial sndsrcs
+		rnd(RATE*27) + RATE*4, // minimum length 4-30 sec
+		rnd(RATE*56) + RATE*35 // max length 35-90 sec
 	);
 
 	return 0;
