@@ -167,12 +167,14 @@ static void add_effect(char *cmd, const size_t buflen, int subdiv)
 		float threshdB, ratio, attack, release;
 		int rms = rnd(2);
 		threshdB = (rms ? -12 : -6) - 30*frnd();
-		// note: comp program used to be backwards
-		// but now <1 = expander >1 = compressor
+		// note: comp program when used without a colon is backwards
+		// i.e. >1 = expander <1 = compressor
 		// as it should be.
-		ratio = 1.0 + frnd()*12.0;
-		if (!rnd(8)) // far more likely to compress than expand
-			ratio = 1.0/ratio;
+
+		if (rnd(8)) // compress with 7/8 chance
+			ratio = 1/(1.0 + frnd()*12.0);
+		else // expand, but be careful, this shit is fucked
+			ratio = 1.0 + frnd()*1.25; // 1 to 2.25
 		attack = frnd()*100.0+10.0;
 		release = frnd()*1000.0+100.0;
 		snprintf(p, spaceleft, "|comp %s -threshdB %f -ratio %f "
